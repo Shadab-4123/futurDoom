@@ -1,7 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Sparkles, RotateCcw, Copy, ThumbsUp, ThumbsDown, Paperclip } from 'lucide-react';
+import {
+  Send, Sparkles, RotateCcw, Copy, ThumbsUp, ThumbsDown,
+  Paperclip, X, FileText, Image, File,
+} from 'lucide-react';
 import Button from './ui/Button';
+
+const ACCEPTED_TYPES = 'image/*,text/*,.pdf,.doc,.docx,.csv,.json,.md';
+const MAX_FILE_MB = 10;
 
 const suggestedPrompts = [
   'What is quantum computing?',
@@ -18,7 +24,68 @@ const mockResponses = {
   'Write a haiku about the ocean': "Waves crash endlessly,\nSalt-kissed breeze carries secrets —\nDepths hold ancient dreams.",
 };
 
-function MessageBubble({ message, isLatest }) {
+/* ─── helpers ─────────────────────────────────────────────────── */
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function FileIcon({ type, className }) {
+  if (type?.startsWith('image/')) return <Image className={className} />;
+  if (type?.startsWith('text/') || /pdf|doc|csv|json/.test(type)) return <FileText className={className} />;
+  return <File className={className} />;
+}
+
+function buildAttachmentReply(files) {
+  const names = files.map(f => `"${f.name}"`).join(', ');
+  const hasImage = files.some(f => f.type?.startsWith('image/'));
+  const hasDoc   = files.some(f => !f.type?.startsWith('image/'));
+  if (hasImage && hasDoc)
+    return `I can see you've attached ${names}. I've received both image(s) and document(s). In the full version I would analyse the image content and read the document to give you a contextual response. What would you like to know?`;
+  if (hasImage)
+    return `I can see you've shared the image${files.length > 1 ? 's' : ''} — ${names}. In the full version I would describe, analyse, or answer questions about the visual content. What would you like to know?`;
+  return `I've received ${names}. In the full version I would read and analyse the file content to help you summarise, query, or transform it. What would you like me to do with it?`;
+}
+
+/* ─── AttachmentChip ─────────────────────────────────────────── */
+
+function AttachmentChip({ file, onRemove }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.88, y: 4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.85 }}
+      transition={{ duration: 0.18 }}
+      className="relative flex items-center gap-2 bg-ink-50 border border-ink-100 rounded-xl px-3 py-2 max-w-[180px] group/chip flex-shrink-0"
+    >
+      {file.type?.startsWith('image/') && file.preview ? (
+        <img src={file.preview} alt={file.name}
+          className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+      ) : (
+        <div className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center flex-shrink-0">
+          <FileIcon type={file.type} className="w-4 h-4 text-brand-600" />
+        </div>
+      )}
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-ink-700 truncate leading-tight">{file.name}</p>
+        <p className="text-[10px] text-ink-400">{formatBytes(file.size)}</p>
+      </div>
+      <button
+        onClick={() => onRemove(file.id)}
+        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-ink-700 text-white flex items-center justify-center opacity-0 group-hover/chip:opacity-100 transition-opacity hover:bg-red-500 focus:outline-none"
+        aria-label={`Remove ${file.name}`}
+      >
+        <X className="w-2.5 h-2.5" />
+      </button>
+    </motion.div>
+  );
+}
+
+/* ─── MessageBubble ──────────────────────────────────────────── */
+
+function MessageBubble({ message }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -32,16 +99,50 @@ function MessageBubble({ message, isLatest }) {
       <motion.div
         initial={{ opacity: 0, y: 12, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
         className="flex justify-end"
       >
-        <div className="max-w-[75%] sm:max-w-[65%] bg-brand-500 text-white rounded-2xl rounded-tr-sm px-5 py-3.5 text-sm leading-relaxed shadow-md shadow-brand-500/20">
-          {message.content}
+        <div className="max-w-[75%] sm:max-w-[65%] flex flex-col gap-2 items-end">
+          {/* Attachment previews in bubble */}
+          {message.attachments?.length > 0 && (
+            <div className="flex flex-wrap gap-2 justify-end">
+              {message.attachments.map(file => (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-2 bg-brand-600 border border-brand-400/40 rounded-2xl px-3 py-2"
+                >
+                  {file.type?.startsWith('image/') && file.preview ? (
+                    <img
+                      src={file.preview}
+                      alt={file.name}
+                      className="w-14 h-14 rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                        <FileIcon type={file.type} className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-white truncate max-w-[120px]">{file.name}</p>
+                        <p className="text-[10px] text-white/60">{formatBytes(file.size)}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {message.content && (
+            <div className="bg-brand-500 text-white rounded-2xl rounded-tr-sm px-5 py-3.5 text-sm leading-relaxed shadow-md shadow-brand-500/20">
+              {message.content}
+            </div>
+          )}
         </div>
       </motion.div>
     );
   }
 
+  /* assistant bubble */
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -55,20 +156,17 @@ function MessageBubble({ message, isLatest }) {
       <div className="flex-1 max-w-[75%] sm:max-w-[70%]">
         <div className="bg-white border border-ink-100 rounded-2xl rounded-tl-sm px-5 py-4 text-sm text-ink-700 leading-relaxed shadow-sm">
           {message.content.split('\n').map((line, i) => {
-            if (line.startsWith('**') && line.endsWith('**')) {
+            if (line.startsWith('**') && line.endsWith('**'))
               return <p key={i} className="font-semibold text-ink-900 mt-2 first:mt-0">{line.slice(2, -2)}</p>;
-            }
-            if (line.startsWith('- ')) {
+            if (line.startsWith('- '))
               return <li key={i} className="ml-4 list-disc text-ink-600 mt-1">{line.slice(2)}</li>;
-            }
             if (line === '') return <div key={i} className="h-2" />;
             return <p key={i}>{line}</p>;
           })}
           {message.loading && (
             <span className="inline-flex gap-1 ml-1">
               {[0, 1, 2].map(i => (
-                <motion.span
-                  key={i}
+                <motion.span key={i}
                   className="w-1.5 h-1.5 bg-brand-400 rounded-full inline-block"
                   animate={{ opacity: [0.3, 1, 0.3] }}
                   transition={{ repeat: Infinity, duration: 1, delay: i * 0.2 }}
@@ -78,7 +176,6 @@ function MessageBubble({ message, isLatest }) {
           )}
         </div>
 
-        {/* Actions */}
         {!message.loading && (
           <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <button
@@ -101,41 +198,100 @@ function MessageBubble({ message, isLatest }) {
   );
 }
 
+/* ─── ChatInterface ──────────────────────────────────────────── */
+
 export default function ChatInterface() {
-  const [messages, setMessages] = useState([
-    {
-      id: 0,
-      role: 'assistant',
-      content: "Hi! I'm QMee, your intelligent AI assistant. Ask me anything — from quick facts to in-depth analysis, I'm here to help. 👋",
-    },
-  ]);
+  const [messages, setMessages] = useState([{
+    id: 0,
+    role: 'assistant',
+    content: "Hi! I'm QMee, your intelligent AI assistant. Ask me anything — from quick facts to in-depth analysis, I'm here to help. 👋",
+  }]);
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [attachments, setAttachments] = useState([]);
+  const [dragOver, setDragOver]     = useState(false);
+  const [fileError, setFileError]   = useState('');
+  const [isLoading, setIsLoading]   = useState(false);
+
   const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
+  const inputRef       = useRef(null);
+  const fileInputRef   = useRef(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
+  /* scroll to latest message */
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  /* revoke object URLs when attachments change or component unmounts */
+  useEffect(() => {
+    return () => {
+      attachments.forEach(f => { if (f.preview) URL.revokeObjectURL(f.preview); });
+    };
+  }, [attachments]);
+
+  /* process File[] from picker or drag-drop */
+  const processFiles = useCallback((rawList) => {
+    setFileError('');
+    const toAdd = [];
+    for (const raw of Array.from(rawList)) {
+      if (raw.size > MAX_FILE_MB * 1024 * 1024) {
+        setFileError(`"${raw.name}" is over the ${MAX_FILE_MB} MB limit.`);
+        continue;
+      }
+      toAdd.push({
+        id:      `${raw.name}-${Date.now()}-${Math.random()}`,
+        name:    raw.name,
+        size:    raw.size,
+        type:    raw.type,
+        preview: raw.type.startsWith('image/') ? URL.createObjectURL(raw) : null,
+      });
+    }
+    if (toAdd.length) setAttachments(prev => [...prev, ...toAdd]);
+  }, []);
+
+  const removeAttachment = (id) => {
+    setAttachments(prev => {
+      const f = prev.find(x => x.id === id);
+      if (f?.preview) URL.revokeObjectURL(f.preview);
+      return prev.filter(x => x.id !== id);
+    });
+  };
+
+  /* drag-and-drop handlers */
+  const handleDragOver  = (e) => { e.preventDefault(); setDragOver(true); };
+  const handleDragLeave = ()    => setDragOver(false);
+  const handleDrop      = (e)   => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files?.length) processFiles(e.dataTransfer.files);
+  };
+
+  /* file input change */
+  const handleFileInputChange = (e) => {
+    if (e.target.files?.length) processFiles(e.target.files);
+    e.target.value = '';   // allow re-selecting same file
+  };
+
+  /* send */
   const sendMessage = async (text) => {
-    const content = text || input.trim();
-    if (!content || isLoading) return;
+    const content = (text ?? input).trim();
+    if (!content && attachments.length === 0) return;
+    if (isLoading) return;
 
+    const snapshot = [...attachments];
     setInput('');
-    const userMsg = { id: Date.now(), role: 'user', content };
-    const loadingMsg = { id: Date.now() + 1, role: 'assistant', content: '', loading: true };
+    setAttachments([]);
+    setFileError('');
 
+    const userMsg    = { id: Date.now(),     role: 'user',      content, attachments: snapshot };
+    const loadingMsg = { id: Date.now() + 1, role: 'assistant', content: '', loading: true };
     setMessages(prev => [...prev, userMsg, loadingMsg]);
     setIsLoading(true);
 
     await new Promise(r => setTimeout(r, 900 + Math.random() * 600));
 
-    const reply = mockResponses[content] || mockResponses.default;
+    const reply = snapshot.length > 0
+      ? buildAttachmentReply(snapshot)
+      : (mockResponses[content] || mockResponses.default);
 
     setMessages(prev => prev.map(m =>
       m.id === loadingMsg.id ? { ...m, content: reply, loading: false } : m
@@ -145,27 +301,58 @@ export default function ChatInterface() {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
   const handleReset = () => {
-    setMessages([{
-      id: 0,
-      role: 'assistant',
-      content: "Chat cleared. I'm ready for your next question! 🙂",
-    }]);
+    attachments.forEach(f => { if (f.preview) URL.revokeObjectURL(f.preview); });
+    setAttachments([]);
+    setFileError('');
+    setMessages([{ id: 0, role: 'assistant', content: "Chat cleared. I'm ready for your next question! 🙂" }]);
   };
 
+  const canSend = (input.trim().length > 0 || attachments.length > 0) && !isLoading;
+
   return (
-    <div className="flex flex-col h-full bg-surface">
-      {/* Chat header */}
+    <div
+      className={`relative flex flex-col h-full transition-colors duration-200 ${dragOver ? 'bg-brand-50' : 'bg-surface'}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_TYPES}
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
+      {/* Drag-over overlay */}
+      <AnimatePresence>
+        {dragOver && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-3 z-20 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-brand-400 bg-brand-50/90 backdrop-blur-sm pointer-events-none"
+          >
+            <div className="w-14 h-14 rounded-2xl gradient-brand flex items-center justify-center mb-3 shadow-lg shadow-brand-500/20">
+              <Paperclip className="w-6 h-6 text-white" />
+            </div>
+            <p className="text-brand-700 font-semibold text-sm">Drop files to attach</p>
+            <p className="text-brand-400 text-xs mt-1">Images, PDFs, text — up to {MAX_FILE_MB} MB each</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Header ── */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 sm:px-6 py-4 bg-white border-b border-ink-100">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl gradient-brand flex items-center justify-center shadow-sm shadow-brand-500/20">
-            <Sparkles className="w-4.5 h-4.5 text-white" />
+            <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
             <p className="font-semibold text-ink-900 text-sm">QMee</p>
@@ -177,16 +364,15 @@ export default function ChatInterface() {
         </div>
         <button
           onClick={handleReset}
-          className="p-2 rounded-lg text-ink-400 hover:text-ink-700 hover:bg-ink-50 transition-colors"
           title="New conversation"
+          className="p-2 rounded-lg text-ink-400 hover:text-ink-700 hover:bg-ink-50 transition-colors"
         >
           <RotateCcw className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Messages area */}
+      {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-5">
-        {/* Suggested prompts when conversation is fresh */}
         {messages.length === 1 && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -197,9 +383,7 @@ export default function ChatInterface() {
             <p className="text-xs font-medium text-ink-400 mb-3 text-center">Try asking…</p>
             <div className="flex flex-wrap justify-center gap-2">
               {suggestedPrompts.map(p => (
-                <button
-                  key={p}
-                  onClick={() => sendMessage(p)}
+                <button key={p} onClick={() => sendMessage(p)}
                   className="text-xs text-ink-600 bg-white border border-ink-100 hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50 rounded-full px-3.5 py-1.5 transition-all duration-150"
                 >
                   {p}
@@ -210,40 +394,88 @@ export default function ChatInterface() {
         )}
 
         <AnimatePresence>
-          {messages.map((msg, i) => (
-            <MessageBubble key={msg.id} message={msg} isLatest={i === messages.length - 1} />
-          ))}
+          {messages.map(msg => <MessageBubble key={msg.id} message={msg} />)}
         </AnimatePresence>
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Disclaimer */}
+      {/* ── Disclaimer ── */}
       <div className="flex-shrink-0 px-4 sm:px-6 py-2 text-center">
         <p className="text-xs text-ink-300">
           QMee can generate inaccurate responses. Verify responses through independent sources.
         </p>
       </div>
 
-      {/* Input area */}
-      <div className="flex-shrink-0 px-4 sm:px-6 pb-5 pt-2">
-        <div className="relative bg-white border border-ink-200 hover:border-brand-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 rounded-2xl transition-all duration-200 shadow-sm">
+      {/* ── Input ── */}
+      <div className="flex-shrink-0 px-4 sm:px-6 pb-5 pt-1">
+        {/* File error */}
+        <AnimatePresence>
+          {fileError && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="flex items-center gap-1 text-xs text-red-500 mb-2"
+            >
+              <X className="w-3 h-3 flex-shrink-0" /> {fileError}
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        <div className={`relative bg-white rounded-2xl shadow-sm transition-all duration-200 border ${
+          dragOver
+            ? 'border-brand-400 ring-2 ring-brand-400/20'
+            : 'border-ink-200 hover:border-brand-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20'
+        }`}>
+          {/* Pending attachment chips */}
+          <AnimatePresence>
+            {attachments.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="flex flex-wrap gap-2 px-4 pt-3 pb-1"
+              >
+                {attachments.map(file => (
+                  <AttachmentChip key={file.id} file={file} onRemove={removeAttachment} />
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <textarea
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask QMee anything…"
+            placeholder={attachments.length > 0 ? 'Add a message or send the file…' : 'Ask QMee anything…'}
             rows={1}
             className="w-full px-5 pt-4 pb-12 text-sm text-ink-900 placeholder:text-ink-300 bg-transparent resize-none outline-none leading-relaxed max-h-36 overflow-y-auto"
             style={{ scrollbarWidth: 'none' }}
           />
+
           <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
-            <button className="p-1.5 rounded-lg text-ink-300 hover:text-ink-500 hover:bg-ink-50 transition-colors">
-              <Paperclip className="w-4 h-4" />
-            </button>
+            {/* Paperclip — opens file picker */}
+            <div className="relative">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach file (or drag & drop)"
+                className={`p-1.5 rounded-lg transition-colors ${
+                  attachments.length > 0
+                    ? 'text-brand-500 bg-brand-50'
+                    : 'text-ink-300 hover:text-brand-500 hover:bg-brand-50'
+                }`}
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+              {attachments.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full gradient-brand text-white text-[9px] font-bold flex items-center justify-center pointer-events-none">
+                  {attachments.length}
+                </span>
+              )}
+            </div>
+
             <Button
               onClick={() => sendMessage()}
-              disabled={!input.trim() || isLoading}
+              disabled={!canSend}
               size="sm"
               className="h-8 px-4 rounded-xl"
             >
@@ -252,6 +484,10 @@ export default function ChatInterface() {
             </Button>
           </div>
         </div>
+
+        <p className="text-[10px] text-ink-300 mt-1.5 px-1">
+          Click <Paperclip className="w-2.5 h-2.5 inline relative -top-px" /> or drag &amp; drop files · Images, PDFs, text · Max {MAX_FILE_MB} MB each
+        </p>
       </div>
     </div>
   );
