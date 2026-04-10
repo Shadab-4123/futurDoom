@@ -4,7 +4,7 @@ A modern, premium redesign of the QMee AI assistant frontend. Built with React, 
 
 ## Live Demo
 
-> _Deploy link will appear here after deployment_
+**Production:** [https://qmee.netlify.app/](https://qmee.netlify.app/)
 
 ## Tech Stack
 
