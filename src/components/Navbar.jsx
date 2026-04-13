@@ -9,6 +9,7 @@ const navLinks = [
   { label: 'How it works', href: '/#how-it-works' },
   { label: 'Testimonials', href: '/#testimonials' },
   { label: 'FAQ', href: '/#faq' },
+  { label: 'Share', href: '/share', isRoute: true },
 ];
 
 export default function Navbar() {
@@ -66,14 +67,24 @@ export default function Navbar() {
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-1">
             {navLinks.map(link => (
-              <a
-                key={link.label}
-                href={link.href}
-                onClick={(e) => handleAnchorClick(e, link.href)}
-                className="px-4 py-2 text-sm font-medium text-ink-600 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-all duration-150"
-              >
-                {link.label}
-              </a>
+              link.isRoute ? (
+                <Link
+                  key={link.label}
+                  to={link.href}
+                  className="px-4 py-2 text-sm font-medium text-ink-600 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-all duration-150"
+                >
+                  {link.label}
+                </Link>
+              ) : (
+                <a
+                  key={link.label}
+                  href={link.href}
+                  onClick={(e) => handleAnchorClick(e, link.href)}
+                  className="px-4 py-2 text-sm font-medium text-ink-600 hover:text-brand-600 rounded-lg hover:bg-brand-50 transition-all duration-150"
+                >
+                  {link.label}
+                </a>
+              )
             ))}
           </div>
 
@@ -137,14 +148,24 @@ export default function Navbar() {
 
               <div className="flex-1 overflow-y-auto py-4 px-3">
                 {navLinks.map(link => (
-                  <a
-                    key={link.label}
-                    href={link.href}
-                    onClick={(e) => handleAnchorClick(e, link.href)}
-                    className="block px-4 py-3 text-sm font-medium text-ink-700 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition-colors"
-                  >
-                    {link.label}
-                  </a>
+                  link.isRoute ? (
+                    <Link
+                      key={link.label}
+                      to={link.href}
+                      className="block px-4 py-3 text-sm font-medium text-ink-700 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition-colors"
+                    >
+                      {link.label}
+                    </Link>
+                  ) : (
+                    <a
+                      key={link.label}
+                      href={link.href}
+                      onClick={(e) => handleAnchorClick(e, link.href)}
+                      className="block px-4 py-3 text-sm font-medium text-ink-700 hover:text-brand-600 hover:bg-brand-50 rounded-xl transition-colors"
+                    >
+                      {link.label}
+                    </a>
+                  )
                 ))}
               </div>
 

@@ -1,10 +1,13 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send, Sparkles, RotateCcw, Copy, ThumbsUp, ThumbsDown,
-  Paperclip, X, FileText, Image, File,
+  Paperclip, X, FileText, Image, File, ArrowLeft,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import Button from './ui/Button';
+import { threads, threadToMessages } from '../data/sharePage';
 
 const ACCEPTED_TYPES = 'image/*,text/*,.pdf,.doc,.docx,.csv,.json,.md';
 const MAX_FILE_MB = 10;
@@ -201,11 +204,25 @@ function MessageBubble({ message }) {
 /* ─── ChatInterface ──────────────────────────────────────────── */
 
 export default function ChatInterface() {
-  const [messages, setMessages] = useState([{
-    id: 0,
-    role: 'assistant',
-    content: "Hi! I'm QMee, your intelligent AI assistant. Ask me anything — from quick facts to in-depth analysis, I'm here to help. 👋",
-  }]);
+  const [searchParams] = useSearchParams();
+
+  /* If ?thread=<id> is in the URL, pre-seed with that thread's messages */
+  const threadId = searchParams.get('thread');
+  const seedThread = useMemo(() => {
+    if (!threadId) return null;
+    return threads.find(t => String(t.id) === threadId) ?? null;
+  }, [threadId]);
+
+  const initialMessages = useMemo(() => {
+    if (seedThread) return threadToMessages(seedThread);
+    return [{
+      id: 0,
+      role: 'assistant',
+      content: "Hi! I'm QMee, your intelligent AI assistant. Ask me anything — from quick facts to in-depth analysis, I'm here to help. 👋",
+    }];
+  }, [seedThread]);
+
+  const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [dragOver, setDragOver]     = useState(false);
@@ -370,6 +387,24 @@ export default function ChatInterface() {
           <RotateCcw className="w-4 h-4" />
         </button>
       </div>
+
+      {/* ── Thread context banner (shown when opened from /share) ── */}
+      {seedThread && (
+        <div className="flex-shrink-0 flex items-center justify-between px-4 sm:px-6 py-2.5 bg-brand-50 border-b border-brand-100">
+          <div className="flex items-center gap-2 text-xs text-brand-700">
+            <div className="w-1.5 h-1.5 rounded-full bg-brand-500" />
+            <span className="font-medium">Continuing thread:</span>
+            <span className="text-brand-600 truncate max-w-[240px]">{seedThread.question}</span>
+          </div>
+          <Link
+            to="/share"
+            className="flex items-center gap-1 text-xs font-medium text-brand-500 hover:text-brand-700 transition-colors flex-shrink-0 ml-3"
+          >
+            <ArrowLeft className="w-3 h-3" />
+            Back to Share
+          </Link>
+        </div>
+      )}
 
       {/* ── Messages ── */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-5">

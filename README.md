@@ -29,6 +29,7 @@ A modern, premium redesign of the QMee AI assistant frontend. Built with React, 
 |---|---|
 | `/` | Landing page — Hero, Features, How it Works, Testimonials, FAQ, CTA |
 | `/chat` | Interactive chat interface with mock AI responses |
+| `/share` | Public conversation hub — profile, syntax-highlighted code threads, share actions |
 
 ## Project Structure
 
