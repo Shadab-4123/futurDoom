@@ -1,9 +1,9 @@
 export const profile = {
-  name: 'Shadab Khan',
+  name: 'Shadab Raza',
   role: 'Full-Stack Developer',
   location: 'Delhi, India',
   bio: 'Building thoughtful digital experiences with React, Node, and a deep love for clean UI. Open-source contributor, coffee-driven. ☕',
-  avatarInitials: 'SK',
+  avatarInitials: 'SR',
 };
 
 export const stats = [
